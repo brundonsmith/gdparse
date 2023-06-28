@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use nom::{
     branch::alt,
     bytes::complete::{escaped, tag, take_while, take_while1},
@@ -227,6 +229,8 @@ fn statement(ind: usize) -> impl Fn(Slice) -> ParseResult<AST<Statement>> {
             map(while_loop(ind), AST::recast::<Statement>),
             map(for_loop(ind), AST::recast::<Statement>),
             map(match_statement(ind), AST::recast::<Statement>),
+            map(assignment_statement, AST::recast::<Statement>),
+            map(return_statement, AST::recast::<Statement>),
         ))(i)
     }
 }
@@ -268,13 +272,15 @@ fn if_else_statement(ind: usize) -> impl Fn(Slice) -> ParseResult<AST<IfElseStat
         map(
             tuple((
                 seq!(break_after(tag("if")), expression(None), block(ind + 1)),
-                many0(seq!(
-                    break_after(tag("elif")),
-                    expression(None),
-                    block(ind + 1)
+                many0(preceded(
+                    blank_lines_and_indentation(ind),
+                    seq!(break_after(tag("elif")), expression(None), block(ind + 1)),
                 )),
                 opt(map(
-                    seq!(break_after(tag("else")), block(ind + 1)),
+                    preceded(
+                        blank_lines_and_indentation(ind),
+                        seq!(tag("else"), block(ind + 1)),
+                    ),
                     |(_, block)| block,
                 )),
             )),
@@ -311,8 +317,8 @@ fn for_loop(ind: usize) -> impl Fn(Slice) -> ParseResult<AST<ForLoop>> {
         map(
             seq!(
                 break_after(tag("for")),
-                plain_identifier,
-                tag("in"),
+                break_after(plain_identifier),
+                break_after(tag("in")),
                 expression(None),
                 block(ind + 1)
             ),
@@ -343,6 +349,44 @@ fn match_statement(ind: usize) -> impl Fn(Slice) -> ParseResult<AST<MatchStateme
             },
         )(i)
     }
+}
+
+fn assignment_statement(i: Slice) -> ParseResult<AST<AssignmentStatement>> {
+    map(
+        seq!(
+            map(local_identifier, AST::recast::<Expression>),
+            map(
+                terminated(
+                    opt(alt((
+                        tag("**"),
+                        tag("*"),
+                        tag("/"),
+                        tag("%"),
+                        tag("+"),
+                        tag("-"),
+                        tag("&"),
+                        tag("|"),
+                        tag("^"),
+                        tag("<<"),
+                        tag(">>")
+                    ))),
+                    tag("=")
+                ),
+                |op: Option<Slice>| op
+                    .map(|op| BinaryOperator::from_str(op.as_str()).unwrap().as_ast(op))
+            ),
+            expression(None)
+        ),
+        |(mut target, mut operator, mut value)| {
+            make_node!(
+                AssignmentStatement,
+                target.spanning(&value),
+                target,
+                operator,
+                value
+            )
+        },
+    )(i)
 }
 
 fn return_statement(i: Slice) -> ParseResult<AST<Return>> {
@@ -416,6 +460,16 @@ fn expression(
     move |i: Slice| {
         precedence(
             &[
+                &[binary_operation_1],
+                &[binary_operation_2],
+                &[binary_operation_3],
+                &[binary_operation_4],
+                &[binary_operation_5],
+                &[binary_operation_6],
+                &[binary_operation_7],
+                &[binary_operation_8],
+                &[binary_operation_9],
+                &[binary_operation_10],
                 &[function_call_property_chain],
                 &[
                     dict_literal,
@@ -432,6 +486,54 @@ fn expression(
         )
     }
 }
+
+macro_rules! binary_operation {
+    ($name:ident, $( $operator:expr ),* $(,)?) => {
+        fn $name(i: Slice) -> ParseResult<AST<Expression>> {
+            map(
+                tuple((
+                    expression(Some($name)),
+                    many1(pair(
+                        w(alt(($(tag($operator),)*))),
+                        w(expression(Some($name))),
+                    )),
+                )),
+                |(base, clauses)| {
+                    let mut next_left: AST<Expression> = base;
+
+                    for (op, mut right) in clauses {
+                        let mut left = next_left.clone();
+                        let mut op =
+                            BinaryOperator::from_str(op.as_str()).unwrap()
+                                .as_ast(op);
+
+                        next_left = make_node!(
+                            BinaryOperation,
+                            left.slice().clone().spanning(right.slice()),
+                            left,
+                            op,
+                            right
+                        )
+                        .recast::<Expression>();
+                    }
+
+                    next_left
+                },
+            )(i)
+        }
+    };
+}
+
+binary_operation!(binary_operation_1, "**");
+binary_operation!(binary_operation_2, "*", "/", "%");
+binary_operation!(binary_operation_3, "+", "-");
+binary_operation!(binary_operation_4, "<<", ">>");
+binary_operation!(binary_operation_5, "^");
+binary_operation!(binary_operation_6, "|");
+binary_operation!(binary_operation_7, "==", "!=", "<", ">", "<=", ">=");
+binary_operation!(binary_operation_8, "in", "not in");
+binary_operation!(binary_operation_9, "and", "&&");
+binary_operation!(binary_operation_10, "or", "||");
 
 fn function_call_property_chain(i: Slice) -> ParseResult<AST<Expression>> {
     map(
