@@ -493,7 +493,7 @@ macro_rules! binary_operation {
             map(
                 tuple((
                     expression(Some($name)),
-                    many1(pair(
+                    many0(pair(
                         w(alt(($(tag($operator),)*))),
                         w(expression(Some($name))),
                     )),
@@ -537,13 +537,13 @@ binary_operation!(binary_operation_10, "or", "||");
 
 fn function_call_property_chain(i: Slice) -> ParseResult<AST<Expression>> {
     map(
-        seq!(
+        tuple((
             expression(Some(function_call_property_chain)),
-            many1(w(alt((
+            many0(w(alt((
                 map(args, FunctionCallOrPropertyAccess::CalledWith),
-                dot_property_access
-            ))))
-        ),
+                dot_property_access,
+            )))),
+        )),
         |(base, clauses)| {
             let mut next_subject = base;
 
