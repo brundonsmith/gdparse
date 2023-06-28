@@ -1,0 +1,10 @@
+[package]
+name = "gdparse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nom = "7.1.3"
+strum = "0.24.1"
+strum_macros = "0.24.3"
+enum_variant_type = "0.3.1"
