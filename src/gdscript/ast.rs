@@ -775,7 +775,7 @@ pub enum UnaryOperator {
     #[strum(serialize = "-")]
     Negative,
 
-    #[strum(serialize = "!")]
+    #[strum(serialize = "not", serialize = "!")]
     Not,
 }
 
@@ -838,10 +838,10 @@ pub enum BinaryOperator {
     #[strum(serialize = "in")]
     In,
 
-    #[strum(serialize = "and")]
+    #[strum(serialize = "and", serialize = "&&")]
     And,
 
-    #[strum(serialize = "or")]
+    #[strum(serialize = "or", serialize = "||")]
     Or,
 }
 
